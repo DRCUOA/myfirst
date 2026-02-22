@@ -13,14 +13,12 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def echo_node(state: State) -> State:
+def echo_node(state: State) -> dict:
     text = state["input"].strip()
-    state["messages"].append(f"echo: {text}")
-    state["done"] = True
-    return state
+    return {"messages": [f"echo: {text}"], "done": True}
 
 
-def llm_node(state: State) -> State:
+def llm_node(state: State) -> dict:
     """Calls OpenAI chat completions and appends the response to messages."""
     prompt = state["input"].strip()
     client = _get_client()
@@ -32,6 +30,4 @@ def llm_node(state: State) -> State:
         ],
     )
     answer = resp.choices[0].message.content or ""
-    state["messages"].append(answer.strip())
-    state["done"] = True
-    return state
+    return {"messages": [answer.strip()], "done": True}
