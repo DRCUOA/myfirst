@@ -42,6 +42,9 @@ wheels/
 .langchain/
 langchain.db
 
+# LangGraph checkpoints
+langgraph.db
+
 # IDE
 .idea/
 .vscode/

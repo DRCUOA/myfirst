@@ -5,29 +5,13 @@ import warnings
 warnings.filterwarnings("ignore", message=".*Pydantic V1.*Python 3.14.*", category=UserWarning)
 
 from dotenv import load_dotenv
+from langgraph.checkpoint.sqlite import SqliteSaver
 
-from .graph import app
+from .graph import build_app
+from .prompt import build_prompt
 from .state import State
 
 load_dotenv()
-
-
-def _build_prompt(user_input: str, file_path: str | None) -> str:
-    if file_path is None:
-        return user_input
-    try:
-        with open(file_path, encoding="utf-8") as f:
-            content = f.read()
-    except OSError as e:
-        print(f"Error reading file: {e}", file=sys.stderr)
-        sys.exit(1)
-    return f"""--- Content from {file_path} ---
-
-{content}
-
---- End of file ---
-
-{user_input}"""
 
 
 def main() -> None:
@@ -40,17 +24,47 @@ def main() -> None:
         help="Path to a file whose contents will be embedded in the prompt",
     )
     parser.add_argument(
+        "-t", "--thread",
+        metavar="ID",
+        default="default",
+        help="Thread ID for conversation context (default: default)",
+    )
+    parser.add_argument(
+        "-s", "--simple",
+        action="store_true",
+        help="Print only the last (assistant) message, for chat UIs",
+    )
+    parser.add_argument(
         "prompt",
         help="Your prompt (required)",
     )
     args = parser.parse_args()
 
-    prompt = _build_prompt(args.prompt, args.file)
+    files = None
+    if args.file:
+        try:
+            with open(args.file, encoding="utf-8") as f:
+                files = [{"name": args.file, "content": f.read()}]
+        except OSError as e:
+            print(f"Error reading file: {e}", file=sys.stderr)
+            sys.exit(1)
+    prompt = build_prompt(args.prompt, files)
     state: State = {"input": prompt, "messages": [], "done": False}
-    out = app.invoke(state)
-    print("\n--- OUTPUT ---")
-    for i, msg in enumerate(out["messages"], 1):
-        print(f"{i}. {msg}")
+    config = {"configurable": {"thread_id": args.thread}}
+
+    with SqliteSaver.from_conn_string("langgraph.db") as checkpointer:
+        app = build_app(checkpointer=checkpointer)
+        out = app.invoke(state, config)
+    def _content(msg) -> str:
+        return msg["content"] if isinstance(msg, dict) else str(msg)
+
+    if args.simple:
+        if out["messages"]:
+            print(_content(out["messages"][-1]))
+    else:
+        print("\n--- OUTPUT ---")
+        for i, msg in enumerate(out["messages"], 1):
+            print(f"{i}. {_content(msg)}")
 
 
 if __name__ == "__main__":
